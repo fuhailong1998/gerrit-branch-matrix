@@ -5,7 +5,7 @@
 ## 安装
 
 1. 浏览器安装 Tampermonkey。
-2. 点击 [一键安装](https://cdn.jsdelivr.net/gh/fuhailong1998/gerrit-branch-matrix@master/gerrit-branch-matrix.user.js)，
+2. 点击 [一键安装](https://github.com/fuhailong1998/gerrit-branch-matrix/raw/master/gerrit-branch-matrix.user.js)，
    在弹出的页面点「安装」。
 
 脚本使用浏览器里已有的 Gerrit 登录状态，不需要填写账号密码。
