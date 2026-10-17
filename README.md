@@ -20,10 +20,18 @@
 
 ## 安装
 
-1. 安装 [Tampermonkey](https://www.tampermonkey.net/)。
-2. 新建脚本，粘贴 [`gerrit-branch-matrix.user.js`](gerrit-branch-matrix.user.js) 的内容并保存；
-   或把该文件直接拖入 Tampermonkey。
-3. 打开 Gerrit，右下角出现圆形图标即可使用。
+**一键安装**：[点此安装脚本](https://cdn.jsdelivr.net/gh/fuhailong1998/gerrit-branch-matrix@master/gerrit-branch-matrix.user.js)
+
+Tampermonkey 会弹出安装页，点「安装」即可。需要先装好
+[Tampermonkey](https://www.tampermonkey.net/)。
+
+> 链接走 jsDelivr CDN，因为它以 `application/javascript` 返回脚本，
+> Tampermonkey 才会自动识别；GitHub 的 raw 链接返回 `text/plain`，只能另存为文件。
+
+**手动安装**：打开 [`gerrit-branch-matrix.user.js`](gerrit-branch-matrix.user.js)，
+点右上角「Raw」，全选复制后在 Tampermonkey 里新建脚本粘贴保存。
+
+安装后打开 Gerrit，右下角出现圆形图标即可使用。
 
 建议把脚本头部的 `@match` 改成你自己的 Gerrit 地址：
 
