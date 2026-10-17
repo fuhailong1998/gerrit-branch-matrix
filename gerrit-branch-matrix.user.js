@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gerrit 主线覆盖矩阵
 // @namespace    https://github.com/fuhailong1998/gerrit-branch-matrix
-// @version      1.9.2
+// @version      1.9.3
 // @description  在 Gerrit 变更页显示该变更在各目标分支的同步状态，提供覆盖矩阵面板、cherry-pick 与「无需同步」标记
 // @match        http://10.2.12.42/gerrit/*
 // @noframes
@@ -416,15 +416,19 @@
         .bm-root{
             --bm-bg:#ffffff;--bm-fg:#1f2328;--bm-muted:#59636e;--bm-border:#d0d7de;--bm-subtle:#f6f8fa;
             --bm-hover:#eef1f4;--bm-accent:#0969da;--bm-sel:#ddf4ff;--bm-shadow:0 8px 24px rgba(31,35,40,.18);
-            --bm-merged:#1a7f37;--bm-review:#9a6700;--bm-abandoned:#59636e;--bm-missing:#cf222e;
+            --bm-merged:#1a7f37;--bm-review:#0969da;--bm-abandoned:#59636e;--bm-missing:#953800;
             --bm-skip:#8250df;--bm-error:#cf222e;
+            --bm-merged-bg:#dafbe1;--bm-review-bg:#ddf4ff;--bm-abandoned-bg:#eaeef2;
+            --bm-missing-bg:#fff1e5;--bm-skip-bg:#fbefff;--bm-error-bg:#ffebe9;
             color:var(--bm-fg);font:13px/1.5 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
         }
         .bm-root[data-theme=dark]{
             --bm-bg:#161b22;--bm-fg:#e6edf3;--bm-muted:#9198a1;--bm-border:#3d444d;--bm-subtle:#212830;
             --bm-hover:#262c36;--bm-accent:#4493f8;--bm-sel:#1b3352;--bm-shadow:0 8px 24px rgba(0,0,0,.5);
-            --bm-merged:#3fb950;--bm-review:#d29922;--bm-abandoned:#9198a1;--bm-missing:#f85149;
+            --bm-merged:#3fb950;--bm-review:#79c0ff;--bm-abandoned:#9198a1;--bm-missing:#ffa657;
             --bm-skip:#ab7df8;--bm-error:#f85149;
+            --bm-merged-bg:#122b1a;--bm-review-bg:#142b45;--bm-abandoned-bg:#262c36;
+            --bm-missing-bg:#3d2414;--bm-skip-bg:#2b2042;--bm-error-bg:#3b1b20;
         }
         .bm-root *{box-sizing:border-box}
         .bm-root button,.bm-root input,.bm-root select,.bm-root textarea{font:inherit;color:inherit}
@@ -454,7 +458,7 @@
         .bm-btn:disabled{opacity:.55;cursor:default}
         .bm-btn.bm-primary{background:var(--bm-accent);border-color:var(--bm-accent);color:#fff}
         .bm-btn.bm-primary:hover{filter:brightness(1.08)}
-        .bm-btn.bm-danger{color:var(--bm-missing)}
+        .bm-btn.bm-danger{color:var(--bm-error)}
         .bm-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;
             border:1px solid transparent;border-radius:6px;background:none;cursor:pointer;color:var(--bm-muted);
             transition:background-color .15s,color .15s}
@@ -481,9 +485,14 @@
         a.bm-cell:hover,button.bm-cell:hover{background:var(--bm-hover);border-color:var(--bm-border);
             text-decoration:none}
         button.bm-cell[aria-busy=true]{cursor:progress;opacity:.7}
-        .bm-tone-merged{color:var(--bm-merged)}.bm-tone-review{color:var(--bm-review)}
-        .bm-tone-abandoned{color:var(--bm-abandoned)}.bm-tone-missing{color:var(--bm-missing)}
-        .bm-tone-skip{color:var(--bm-skip)}.bm-tone-error{color:var(--bm-error)}
+        .bm-root .bm-tone-merged{color:var(--bm-merged);--bm-tone-bg:var(--bm-merged-bg)}
+        .bm-root .bm-tone-review{color:var(--bm-review);--bm-tone-bg:var(--bm-review-bg)}
+        .bm-root .bm-tone-abandoned{color:var(--bm-abandoned);--bm-tone-bg:var(--bm-abandoned-bg)}
+        .bm-root .bm-tone-missing{color:var(--bm-missing);--bm-tone-bg:var(--bm-missing-bg)}
+        .bm-root .bm-tone-skip{color:var(--bm-skip);--bm-tone-bg:var(--bm-skip-bg)}
+        .bm-root .bm-tone-error{color:var(--bm-error);--bm-tone-bg:var(--bm-error-bg)}
+        .bm-root .bm-cell{background:var(--bm-tone-bg)}
+        .bm-root .bm-cell:hover{background:var(--bm-tone-bg);border-color:currentColor}
         .bm-caret{opacity:.6;font-size:10px}
 
         .bm-layout{display:flex;min-height:340px;height:calc(100% - 92px)}
@@ -498,8 +507,8 @@
         .bm-repo[aria-current=true]{background:var(--bm-sel);border-color:var(--bm-accent)}
         .bm-repo small{color:var(--bm-muted)}
         .bm-hint{color:var(--bm-muted)}
-        .bm-errors{margin:0 0 10px;padding:8px 12px 8px 28px;border:1px solid var(--bm-missing);border-radius:6px;
-            color:var(--bm-missing)}
+        .bm-errors{margin:0 0 10px;padding:8px 12px 8px 28px;border:1px solid var(--bm-error);border-radius:6px;
+            color:var(--bm-error)}
         .bm-section{font-size:12px;font-weight:600;color:var(--bm-muted);text-transform:none;margin:14px 0 8px}
         .bm-empty{padding:28px;text-align:center;color:var(--bm-muted)}
         .bm-conn{padding:10px 16px;border-bottom:1px solid var(--bm-border);background:var(--bm-subtle)}
@@ -534,7 +543,7 @@
         .bm-toast{pointer-events:auto;display:flex;gap:10px;align-items:flex-start;max-width:min(560px,92vw);
             padding:10px 12px 10px 14px;background:var(--bm-bg);border:1px solid var(--bm-border);
             border-left:4px solid var(--bm-merged);border-radius:8px;box-shadow:var(--bm-shadow)}
-        .bm-toast[data-kind=error]{border-left-color:var(--bm-missing)}
+        .bm-toast[data-kind=error]{border-left-color:var(--bm-error)}
         .bm-toast div{white-space:pre-wrap;word-break:break-word;flex:1}
 
         #bm-fab{position:fixed;z-index:100000;width:66px;height:66px;border-radius:50%;display:flex;
@@ -1000,8 +1009,8 @@
 
     // ------------------------------------------------------------ 独立矩阵面板
 
-    const legendHtml = () => [STATUS.MERGED, STATUS.NEW, STATUS.NONE, STATUS.ABANDONED, STATUS.MARKED]
-        .map((s) => `<span class="bm-tone-${s.tone}">${s.icon}<span style="color:var(--bm-muted)">${s.text}</span></span>`)
+    const legendHtml = () => [STATUS.MERGED, STATUS.NEW, STATUS.NONE, STATUS.ABANDONED, STATUS.MARKED, STATUS.ERROR]
+        .map((s) => `<span class="bm-tone-${s.tone}">${s.icon}<span>${s.text}</span></span>`)
         .join('');
 
     async function renderMatrix(ui, project) {
