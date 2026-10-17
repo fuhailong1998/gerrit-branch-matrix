@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         Gerrit 主线覆盖矩阵
 // @namespace    https://github.com/fuhailong1998/gerrit-branch-matrix
-// @version      1.8.0
+// @version      1.9.0
 // @description  在 Gerrit 变更页显示该变更在各目标分支的同步状态，提供覆盖矩阵面板、cherry-pick 与「无需同步」标记
 // @match        *://*/*
 // @noframes
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        unsafeWindow
+// @grant        GM_registerMenuCommand
+// @grant        GM_openInTab
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -16,25 +18,43 @@
  * cherry-pick 为写操作，使用 Gerrit 网页的 XSRF 令牌，失败时给出可读提示。
  * 仓库、目标分支与「无需同步」标记全部保存在本浏览器。
  *
- * 安装后在 Gerrit 页面点右下角图标，首次使用会引导填写配置。
- * 为减少无关页面的开销，建议把上面的 @match 改为自己的 Gerrit 地址，例如：
- *   // @match  https://gerrit.example.com/*
- *   // @match  http://192.0.2.10/gerrit/*
+ * 安装后点浏览器工具栏的 Tampermonkey 图标 →「设置 Gerrit 地址」，填写你的 Gerrit 地址
+ * （含 /gerrit 之类的子路径），之后在该站点右下角会出现图标。
+ * 也可以直接打开 Gerrit 页面，脚本会自动识别。
  */
 (function () {
     'use strict';
 
-    /** Gerrit 页面会在全局变量 CANONICAL_PATH 中给出部署子路径（如 /gerrit），无则视为根路径。 */
-    const BASE = (() => {
-        const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-        const path = typeof w.CANONICAL_PATH === 'string' ? w.CANONICAL_PATH : '';
-        return path.replace(/\/+$/, '');
-    })();
-    /** 仅在 Gerrit 页面运行：gr-app 是 Gerrit 3.x 的根元素。 */
-    const isGerrit = () => !!document.querySelector('gr-app') || typeof (
-        typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).CANONICAL_PATH === 'string';
+    const pageWin = () => (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
+
+    /** 由页面推断当前 Gerrit 地址与子路径：CANONICAL_PATH 是 Gerrit 页面公开的部署路径。 */
+    function detectGerritUrl() {
+        const canonical = pageWin().CANONICAL_PATH;
+        if (typeof canonical !== 'string') {
+            return null;
+        }
+        return (location.origin + canonical.replace(/\/+$/, '')).replace(/\/+$/, '');
+    }
+
+    /**
+     * 访问 Gerrit 的根地址，来自用户在配置面板中填写的「连接地址」，
+     * 未填写时回落到当前页面推断出的地址。支持跨域访问其它 Gerrit 站点。
+     */
+    function baseUrl() {
+        const configured = (loadConnection() || '').trim().replace(/\/+$/, '');
+        if (configured) {
+            return configured;
+        }
+        const canonical = pageWin().CANONICAL_PATH;
+        return location.origin + (typeof canonical === 'string' ? canonical.replace(/\/+$/, '') : '');
+    }
+
+    /** 当前页面是否为 Gerrit：已配置连接地址时，任何页面都可以使用；否则识别 Gerrit 页面结构。 */
+    const isGerritPage = () => !!document.querySelector('gr-app')
+        || typeof pageWin().CANONICAL_PATH === 'string';
     const CONFIG_KEY = 'branchMatrixConfig';
     const MARKS_KEY = 'branchMatrixMarks';
+    const CONN_KEY = 'branchMatrixConnection';
     const FAB_KEY = 'branchMatrixFabPos';
     const BOX_KEY = 'branchMatrixBoxPos';
     const BOX_GRIP = 120;
@@ -91,7 +111,7 @@
     // ------------------------------------------------------------ 小工具
 
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-    const changeUrl = (project, num) => `${BASE}/c/${project}/+/${num}`;
+    const changeUrl = (project, num) => `${baseUrl()}/c/${project}/+/${num}`;
     const title = (t) => (t.note ? `${t.note}（${t.branch}）` : t.branch);
     const shortName = (project) => project.split('/').pop() || project;
     /** 仓库显示名：优先用户自定义名称，否则取项目路径末段。 */
@@ -135,6 +155,10 @@
     }
 
     const saveConfig = (cfg) => GM_setValue(CONFIG_KEY, JSON.stringify(cfg));
+
+    /** Gerrit 连接地址（根地址，含部署子路径）。 */
+    const loadConnection = () => GM_getValue(CONN_KEY, '') || '';
+    const saveConnection = (url) => GM_setValue(CONN_KEY, url.trim().replace(/\/+$/, ''));
 
     /** 校验配置，返回错误信息数组。 */
     function validate(cfg) {
@@ -292,10 +316,21 @@
         return meta?.content || null;
     }
 
+    /** 访问配置的 Gerrit 站点时需要携带该站点的 cookie；同站点用 same-origin 即可。 */
+    const fetchCredentials = () => (isSameOrigin(baseUrl()) ? 'same-origin' : 'include');
+
+    const isSameOrigin = (url) => {
+        try {
+            return new URL(url, location.href).origin === location.origin;
+        } catch (e) {
+            return true;
+        }
+    };
+
     const strip = (text) => (text.startsWith(")]}'") ? text.slice(text.indexOf('\n') + 1) : text);
 
     async function get(path) {
-        const resp = await fetch(`${BASE}${path}`, {credentials: 'same-origin'});
+        const resp = await fetch(`${baseUrl()}${path}`, {credentials: fetchCredentials()});
         if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}`);
         }
@@ -307,9 +342,9 @@
         if (!token) {
             throw new Error('未找到 Gerrit 鉴权令牌，请确认已在 Gerrit 网页上登录');
         }
-        const resp = await fetch(`${BASE}${path}`, {
+        const resp = await fetch(`${baseUrl()}${path}`, {
             method: 'POST',
-            credentials: 'same-origin',
+            credentials: fetchCredentials(),
             headers: {'Content-Type': 'application/json', 'X-Gerrit-Auth': token},
             body: JSON.stringify(body),
         });
@@ -346,6 +381,26 @@
             }
         }
         return result;
+    }
+
+    /** 测试连接：读取服务器版本与当前登录账号。 */
+    async function testConnection(root) {
+        const opts = {credentials: isSameOrigin(root) ? 'same-origin' : 'include'};
+        try {
+            const v = await fetch(`${root}/config/server/version`, opts);
+            if (!v.ok) {
+                return {ok: false, text: `无法访问：HTTP ${v.status}，请确认地址（含 /gerrit 之类的子路径）`};
+            }
+            const version = JSON.parse(strip(await v.text()));
+            const a = await fetch(`${root}/accounts/self`, opts);
+            if (!a.ok) {
+                return {ok: false, text: `已连接 Gerrit ${version}，但未登录：请先在该站点登录`};
+            }
+            const me = JSON.parse(strip(await a.text()));
+            return {ok: true, text: `已连接 Gerrit ${version}，登录为 ${me.username || me.name || me.email || '当前用户'}`};
+        } catch (e) {
+            return {ok: false, text: `连接失败：${e.message}（跨站点时请检查第三方 Cookie 与 CORS）`};
+        }
     }
 
     /** 把某个变更 cherry-pick 到目标分支，Gerrit 会保留原 Change-Id。 */
@@ -431,7 +486,7 @@
         .bm-tone-skip{color:var(--bm-skip)}.bm-tone-error{color:var(--bm-error)}
         .bm-caret{opacity:.6;font-size:10px}
 
-        .bm-layout{display:flex;min-height:380px;height:100%}
+        .bm-layout{display:flex;min-height:340px;height:calc(100% - 92px)}
         .bm-side{width:280px;flex:none;border-right:1px solid var(--bm-border);padding:12px;overflow:auto}
         .bm-main{flex:1;padding:12px 16px;overflow:auto;min-width:0}
         .bm-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
@@ -447,6 +502,8 @@
             color:var(--bm-missing)}
         .bm-section{font-size:12px;font-weight:600;color:var(--bm-muted);text-transform:none;margin:14px 0 8px}
         .bm-empty{padding:28px;text-align:center;color:var(--bm-muted)}
+        .bm-conn{padding:10px 16px;border-bottom:1px solid var(--bm-border);background:var(--bm-subtle)}
+        .bm-conn code{font-size:12px}
         .bm-add{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;padding:8px;
             border:1px solid var(--bm-border);border-radius:8px;background:var(--bm-subtle)}
         .bm-picker{margin:0 0 12px;padding:10px;border:1px solid var(--bm-accent);border-radius:8px;
@@ -1050,18 +1107,49 @@
         saveBtn.textContent = '保存';
         saveBtn.onclick = () => {
             errors = validate(cfg);
+            if (connDraft && !/^https?:\/\/[^/\s]+/i.test(connDraft)) {
+                errors.unshift('Gerrit 连接地址需以 http:// 或 https:// 开头');
+            }
             if (errors.length) {
                 render();
                 return;
             }
             cfg.activeRepo = selected;
+            saveConnection(connDraft);
             saveConfig(cfg);
             toast('配置已保存');
             showMatrixPanel(selected);
         };
         ui.head.append(jsonBtn, saveBtn);
 
+        let connDraft = loadConnection();
+        let connState = null;
+
         const repo = () => cfg.repos.find((r) => r.project === selected);
+
+        /** 顶部「Gerrit 连接」：填写地址并测试连通性与登录状态。 */
+        function connHtml() {
+            const detected = detectGerritUrl();
+            const effective = (connDraft || detected || '').replace(/\/+$/, '');
+            const stateHtml = !connState ? '' : `<span class="bm-tone-${connState.ok ? 'merged' : 'error'}">${
+                esc(connState.text)}</span>`;
+            return `<div class="bm-conn">
+                <div class="bm-row" style="margin:0;align-items:flex-end">
+                    <div class="bm-field" style="flex:1 1 420px"><label for="bm-f-conn">Gerrit 连接地址</label>
+                        <input id="bm-f-conn" data-act="conn" type="url" value="${esc(connDraft)}"
+                            placeholder="${esc(detected || 'https://gerrit.example.com 或 http://192.0.2.10/gerrit')}"></div>
+                    ${detected && connDraft !== detected ? `<button type="button" class="bm-btn" data-act="conn-use"
+                        title="${esc(detected)}">使用当前站点</button>` : ''}
+                    <button type="button" class="bm-btn" data-act="conn-test">测试连接</button>
+                </div>
+                <div class="bm-hint" style="margin-top:4px">${connDraft ? '' : detected
+                    ? `留空则使用当前站点：<code>${esc(detected)}</code>。`
+                    : '当前页面不是 Gerrit，请填写 Gerrit 地址。'}
+                    ${stateHtml}${effective && !isSameOrigin(effective) ? ' <span class="bm-hint">'
+                    + '跨站点访问需先在该 Gerrit 登录，且浏览器允许第三方 Cookie。</span>' : ''}</div>
+            </div>`;
+        }
+
         const errorsHtml = () => (errors.length
             ? `<ul class="bm-errors" role="alert">${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : '');
 
@@ -1072,7 +1160,7 @@
                 renderJson();
                 return;
             }
-            ui.body.innerHTML = `<div class="bm-layout">
+            ui.body.innerHTML = `${connHtml()}<div class="bm-layout">
                 <nav class="bm-side" aria-label="仓库列表">
                     <div class="bm-row" style="justify-content:space-between"><b>仓库</b>
                         <span><button type="button" class="bm-btn" data-act="add-current"
@@ -1092,7 +1180,7 @@
                 </nav>
                 <div class="bm-main">${errorsHtml()}${repo() ? repoForm(repo())
                     : `<div class="bm-empty">${cfg.repos.length ? '选择左侧仓库，或新增一个'
-                        : '首次使用：点左上「新增」填写 Gerrit 项目路径，<br>或打开某个变更页后点「当前项目」。'}</div>`}</div>
+                        : '首次使用：确认上方 Gerrit 连接地址，<br>再点左上「新增」填写项目路径，或在变更页点「当前项目」。'}</div>`}</div>
             </div>`;
             wire();
         }
@@ -1233,6 +1321,32 @@
 
         function wire() {
             const body = ui.body;
+            const connInput = body.querySelector('[data-act=conn]');
+            connInput?.addEventListener('input', () => {
+                connDraft = connInput.value.trim().replace(/\/+$/, '');
+                connState = null;
+            });
+            const useBtn = body.querySelector('[data-act=conn-use]');
+            if (useBtn) {
+                useBtn.onclick = () => {
+                    connDraft = detectGerritUrl() || '';
+                    connState = null;
+                    render();
+                };
+            }
+            body.querySelector('[data-act=conn-test]').onclick = async (e) => {
+                const btn = e.currentTarget;
+                const target = (connDraft || detectGerritUrl() || '').replace(/\/+$/, '');
+                if (!target) {
+                    connState = {ok: false, text: '请先填写地址'};
+                    render();
+                    return;
+                }
+                btn.disabled = true;
+                btn.textContent = '测试中…';
+                connState = await testConnection(target);
+                render();
+            };
             body.querySelectorAll('[data-act=pick]').forEach((el) => {
                 el.onclick = () => {
                     selected = el.dataset.project;
@@ -1458,8 +1572,16 @@
 
     // ------------------------------------------------------------ 变更详情页
 
+    /** 去掉部署子路径后的页面路径，用于识别变更页。 */
+    function pagePath() {
+        const canonical = pageWin().CANONICAL_PATH;
+        const prefix = typeof canonical === 'string' ? canonical.replace(/\/+$/, '') : '';
+        return prefix && location.pathname.startsWith(prefix)
+            ? location.pathname.slice(prefix.length) || '/' : location.pathname;
+    }
+
     function currentChange() {
-        const m = location.pathname.slice(BASE.length).match(/^\/c\/(.+)\/\+\/(\d+)/);
+        const m = pagePath().match(/^\/c\/(.+)\/\+\/(\d+)/);
         return m ? {project: decodeURIComponent(m[1]), number: m[2]} : null;
     }
 
@@ -1685,11 +1807,81 @@
         setInterval(syncEmbed, 1000);
     }
 
-    // 正常情况下 @run-at document-idle 时 body 已就绪；若脚本被提前注入，等 DOM 准备好再初始化。
-    // 非 Gerrit 页面直接退出，不添加任何界面。
-    const start = () => {
-        if (isGerrit()) {
+    /** 当前页面是否属于已配置的 Gerrit 站点。 */
+    const onConfiguredSite = () => {
+        const conn = loadConnection();
+        if (!conn) {
+            return false;
+        }
+        try {
+            const u = new URL(conn);
+            return u.origin === location.origin && location.pathname.startsWith(u.pathname.replace(/\/+$/, '') || '/');
+        } catch (e) {
+            return false;
+        }
+    };
+
+    let started = false;
+
+    /** 在本页加载界面；从扩展菜单进入时即使不是 Gerrit 页面也允许打开设置。 */
+    function ensureStarted() {
+        if (!started) {
+            started = true;
             init();
+        }
+    }
+
+    /** Tampermonkey 扩展菜单：安装后可直接在扩展图标里设置 Gerrit 地址。 */
+    function registerMenu() {
+        if (typeof GM_registerMenuCommand !== 'function') {
+            return;
+        }
+        const conn = loadConnection();
+        GM_registerMenuCommand(`设置 Gerrit 地址${conn ? `（当前：${conn}）` : ''}`, () => {
+            const detected = detectGerritUrl();
+            const input = window.prompt('Gerrit 地址（含子路径，例如 https://gerrit.example.com 或 http://192.0.2.10/gerrit）',
+                conn || detected || 'https://');
+            if (input === null) {
+                return;
+            }
+            const url = input.trim().replace(/\/+$/, '');
+            if (url && !/^https?:\/\/[^/\s]+/i.test(url)) {
+                window.alert('地址需以 http:// 或 https:// 开头');
+                return;
+            }
+            saveConnection(url);
+            if (!url) {
+                window.alert('已清除 Gerrit 地址，将自动识别当前页面。');
+                return;
+            }
+            if (onConfiguredSite() || isGerritPage()) {
+                ensureStarted();
+                toast(`Gerrit 地址已设置为 ${esc(url)}`);
+            } else if (window.confirm(`已保存：${url}\n\n是否打开该 Gerrit 继续配置仓库？`)) {
+                (typeof GM_openInTab === 'function' ? GM_openInTab : window.open)(url, {active: true});
+            }
+        });
+        GM_registerMenuCommand('打开主线覆盖矩阵', () => {
+            ensureStarted();
+            if (!isBoxOpen()) {
+                showMatrixPanel(currentChange()?.project);
+            }
+        });
+        GM_registerMenuCommand('配置仓库与分支', () => {
+            ensureStarted();
+            showConfigPanel();
+        });
+    }
+
+    // 正常情况下 @run-at document-idle 时 body 已就绪；若脚本被提前注入，等 DOM 准备好再初始化。
+    // 扩展菜单在所有页面可用；页面界面只在 Gerrit 页面（或已配置的 Gerrit 站点）加载。
+    const start = () => {
+        if (window.top !== window.self) {
+            return;
+        }
+        registerMenu();
+        if (isGerritPage() || onConfiguredSite()) {
+            ensureStarted();
         }
     };
     if (document.body) {

@@ -31,13 +31,9 @@ Tampermonkey 会弹出安装页，点「安装」即可。需要先装好
 **手动安装**：打开 [`gerrit-branch-matrix.user.js`](gerrit-branch-matrix.user.js)，
 点右上角「Raw」，全选复制后在 Tampermonkey 里新建脚本粘贴保存。
 
-安装后打开 Gerrit，右下角出现圆形图标即可使用。
-
-建议把脚本头部的 `@match` 改成你自己的 Gerrit 地址：
-
-```js
-// @match  https://gerrit.example.com/*
-```
+安装后点浏览器工具栏的 Tampermonkey 图标 →「**设置 Gerrit 地址**」，填写你的 Gerrit 地址
+（含子路径，例如 `http://192.0.2.10/gerrit`）。之后打开该 Gerrit，右下角出现圆形图标即可使用。
+不设置时，脚本会自动识别当前打开的 Gerrit 页面。
 
 详细用法见 [USAGE.md](USAGE.md)。
 
