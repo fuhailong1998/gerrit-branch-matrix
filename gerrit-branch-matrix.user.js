@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Gerrit 主线覆盖矩阵
 // @namespace    https://github.com/fuhailong1998/gerrit-branch-matrix
-// @version      1.9.1
+// @version      1.9.2
 // @description  在 Gerrit 变更页显示该变更在各目标分支的同步状态，提供覆盖矩阵面板、cherry-pick 与「无需同步」标记
-// @match        *://*/*
+// @match        http://10.2.12.42/gerrit/*
 // @noframes
 // @grant        GM_getValue
 // @grant        GM_setValue
