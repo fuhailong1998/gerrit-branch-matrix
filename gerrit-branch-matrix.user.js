@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gerrit 主线覆盖矩阵
 // @namespace    https://github.com/fuhailong1998/gerrit-branch-matrix
-// @version      1.9.0
+// @version      1.9.1
 // @description  在 Gerrit 变更页显示该变更在各目标分支的同步状态，提供覆盖矩阵面板、cherry-pick 与「无需同步」标记
 // @match        *://*/*
 // @noframes
@@ -49,7 +49,7 @@
         return location.origin + (typeof canonical === 'string' ? canonical.replace(/\/+$/, '') : '');
     }
 
-    /** 当前页面是否为 Gerrit：已配置连接地址时，任何页面都可以使用；否则识别 Gerrit 页面结构。 */
+    /** 未配置地址时，通过页面结构识别 Gerrit。 */
     const isGerritPage = () => !!document.querySelector('gr-app')
         || typeof pageWin().CANONICAL_PATH === 'string';
     const CONFIG_KEY = 'branchMatrixConfig';
@@ -1815,20 +1815,29 @@
         }
         try {
             const u = new URL(conn);
-            return u.origin === location.origin && location.pathname.startsWith(u.pathname.replace(/\/+$/, '') || '/');
+            const path = u.pathname.replace(/\/+$/, '');
+            return u.origin === location.origin
+                && (location.pathname === path || location.pathname.startsWith(path + '/'));
         } catch (e) {
             return false;
         }
     };
 
+    /** 保存地址后，只允许配置的站点与部署路径显示界面。 */
+    const shouldDisplay = () => loadConnection() ? onConfiguredSite() : isGerritPage();
+
     let started = false;
 
-    /** 在本页加载界面；从扩展菜单进入时即使不是 Gerrit 页面也允许打开设置。 */
+    /** 统一限制自动启动和菜单启动，其他页面不加载界面。 */
     function ensureStarted() {
+        if (!shouldDisplay()) {
+            return false;
+        }
         if (!started) {
             started = true;
             init();
         }
+        return true;
     }
 
     /** Tampermonkey 扩展菜单：安装后可直接在扩展图标里设置 Gerrit 地址。 */
@@ -1854,7 +1863,7 @@
                 window.alert('已清除 Gerrit 地址，将自动识别当前页面。');
                 return;
             }
-            if (onConfiguredSite() || isGerritPage()) {
+            if (shouldDisplay()) {
                 ensureStarted();
                 toast(`Gerrit 地址已设置为 ${esc(url)}`);
             } else if (window.confirm(`已保存：${url}\n\n是否打开该 Gerrit 继续配置仓库？`)) {
@@ -1862,13 +1871,19 @@
             }
         });
         GM_registerMenuCommand('打开主线覆盖矩阵', () => {
-            ensureStarted();
+            if (!ensureStarted()) {
+                window.alert('请先打开配置的 Gerrit 地址，再使用矩阵。');
+                return;
+            }
             if (!isBoxOpen()) {
                 showMatrixPanel(currentChange()?.project);
             }
         });
         GM_registerMenuCommand('配置仓库与分支', () => {
-            ensureStarted();
+            if (!ensureStarted()) {
+                window.alert('请先打开配置的 Gerrit 地址，再配置仓库。');
+                return;
+            }
             showConfigPanel();
         });
     }
@@ -1880,7 +1895,7 @@
             return;
         }
         registerMenu();
-        if (isGerritPage() || onConfiguredSite()) {
+        if (shouldDisplay()) {
             ensureStarted();
         }
     };
