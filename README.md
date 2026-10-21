@@ -11,7 +11,7 @@
 ## 功能
 
 - **变更页右栏**：在 Cherry picks 下方嵌入「目标分支同步」区块，按目标分支列出 已合入 / 评审中 / 未同步。
-- **覆盖矩阵**：浮动面板里一行一笔主线变更、一列一个目标分支，多个仓库可切换。
+- **覆盖矩阵**：显示主线上评审中和已合入的变更，一行一笔、一列一个目标分支，多个仓库可切换。
 - **直接 cherry-pick**：点击「未同步」即可在 Gerrit 上创建对应的 cherry-pick 变更，
   结果直接显示在菜单里。冲突、`identical tree` 等失败原因原样透出。
 - **无需同步标记**：某些提交本来就不需要同步到某分支，可以标记掉，避免一直显示未同步。
@@ -40,7 +40,7 @@ Tampermonkey 会弹出安装页，点「安装」即可。需要先装好
 ## 工作原理
 
 - 通过 Gerrit REST 的同源请求查询：
-  - 主线最近 N 笔已合入变更（`/changes/?q=project:... branch:... status:merged`）。
+  - 主线最近 N 笔评审中或已合入的变更（`/changes/?q=project:... branch:... (status:open OR status:merged)`），按最后更新时间倒序，两种状态合计 N 笔。
   - 每个目标分支上是否存在对应 `Change-Id` 的变更，取其最优状态（已合入 > 评审中 > 已放弃）。
 - cherry-pick 调用 `POST /changes/<号>/revisions/current/cherrypick`，使用网页的 `XSRF_TOKEN` 作为
   `X-Gerrit-Auth` 头，与 Gerrit 自己的前端完全一致。

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gerrit 主线覆盖矩阵
 // @namespace    https://github.com/fuhailong1998/gerrit-branch-matrix
-// @version      1.9.3
+// @version      1.9.4
 // @description  在 Gerrit 变更页显示该变更在各目标分支的同步状态，提供覆盖矩阵面板、cherry-pick 与「无需同步」标记
 // @match        http://10.2.12.42/gerrit/*
 // @noframes
@@ -1021,13 +1021,13 @@
         }
         ui.body.innerHTML = '<div class="bm-empty" aria-busy="true">加载中…</div>';
         try {
-            const changes = await query(`project:"${project}" branch:"${cfg.mainline}" status:merged`, cfg.show || 30);
+            const changes = await query(`project:"${project}" branch:"${cfg.mainline}" (status:open OR status:merged)`, cfg.show || 30);
             const ids = changes.map((c) => c.change_id);
             const cols = await Promise.all(cfg.targets.map((t) =>
                 targetStatus(project, t.branch, ids).catch((e) => ({__error: e.message}))));
             const marks = loadMarks();
             let html = `<table><thead><tr><th scope="col">#</th><th scope="col">主线变更</th>
-                <th scope="col">合入时间</th><th scope="col">主线（${esc(cfg.mainline)}）</th>
+                <th scope="col">合入 / 更新时间</th><th scope="col">主线（${esc(cfg.mainline)}）</th>
                 ${cfg.targets.map((t) => `<th scope="col">${esc(title(t))}</th>`).join('')}</tr></thead><tbody>`;
             changes.forEach((ch, i) => {
                 html += `<tr><td class="bm-num">${i + 1}</td>
@@ -1035,7 +1035,7 @@
                         <a href="${changeUrl(project, ch._number)}" target="_blank"
                         ><span class="bm-change-num">${ch._number}</span> ${esc(ch.subject)}</a></td>
                     <td class="bm-time">${esc(localTime(ch.submitted || ch.updated))}</td>
-                    <td>${cellHtml(project, {status: 'MERGED', number: ch._number})}</td>`;
+                    <td>${cellHtml(project, {status: ch.status, number: ch._number})}</td>`;
                 cfg.targets.forEach((t, j) => {
                     const col = cols[j];
                     html += `<td>${col.__error ? errorCell(col.__error) : cellHtml(project, col[ch.change_id],
@@ -1044,7 +1044,7 @@
                 html += '</tr>';
             });
             html += '</tbody></table>';
-            ui.body.innerHTML = changes.length ? html : '<div class="bm-empty">主线暂无已合入变更</div>';
+            ui.body.innerHTML = changes.length ? html : '<div class="bm-empty">主线暂无评审中或已合入变更</div>';
             ui.foot(`${legendHtml()}<span style="flex:1"></span>
                 <span>刷新于 ${fmtTime(new Date())} · ${changes.length} 条</span>`);
             bindCells(ui.body, (el) => {
